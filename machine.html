@@ -390,13 +390,13 @@
     grid-column: 1;
     grid-row: 1;
     display: grid;
-    grid-template-columns: minmax(205px, .7fr) minmax(260px, .95fr) minmax(330px, 1.35fr);
+    grid-template-columns: minmax(205px, .8fr) minmax(330px, 1.2fr);
     gap: 3%;
     align-items: end;
   }
   .thanks-head .kicker { margin-bottom: 10px; }
   .thanks-head .title { max-width: none; font-size: clamp(46px, 6.4vw, 92px); }
-  .slides-hero, .endpoint-hero {
+  .slides-hero {
     display: grid;
     gap: .38em;
     padding: 4.5% 5%;
@@ -405,10 +405,9 @@
     box-shadow: 7px 7px 0 rgba(217,72,15,.18);
   }
   .slides-hero { background: var(--soft); color: var(--ink); }
-  .endpoint-hero { background: var(--signal); color: var(--paper); }
-  .slides-hero span, .endpoint-hero span { font: 850 clamp(8px, .85vw, 12px)/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-  .slides-hero strong, .endpoint-hero strong { font: 850 clamp(13px, 1.48vw, 22px)/1.08 var(--mono); letter-spacing: -.035em; overflow-wrap: anywhere; }
-  .slides-hero:hover, .endpoint-hero:hover { border-color: var(--ink); }
+  .slides-hero span { font: 850 clamp(8px, .85vw, 12px)/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  .slides-hero strong { font: 850 clamp(13px, 1.48vw, 22px)/1.08 var(--mono); letter-spacing: -.035em; overflow-wrap: anywhere; }
+  .slides-hero:hover { border-color: var(--ink); }
   .resources-finale {
     grid-column: 1;
     grid-row: 2;
@@ -787,10 +786,6 @@
           <a class="slides-hero" href="https://tinyurl.com/austin-local-ai" target="_blank" rel="noopener">
             <span>Slides</span>
             <strong>tinyurl.com/austin-local-ai</strong>
-          </a>
-          <a class="endpoint-hero" href="https://inference.finite.computer/v1" target="_blank" rel="noopener">
-            <span>OpenAI-compatible inference</span>
-            <strong>inference.finite.computer/v1</strong>
           </a>
         </div>
         <div class="resources-finale">
