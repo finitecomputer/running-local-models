@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Running Local Models: From Desktop to Data Center</title>
+<style>
+  :root {
+    --paper: #f7f1e5;
+    --ink: #17130e;
+    --signal: #d9480f;
+    --muted: #81786b;
+    --line: rgba(23, 19, 14, .2);
+    --soft: rgba(217, 72, 15, .12);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    background: #1b1814;
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; }
+  .shell { width: min(96vw, 1600px); margin: 0 auto; padding: 12px 0 18px; }
+  .topline { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; margin-bottom: 10px; color: #f7f1e5; }
+  .topline h1 { margin: 0; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+  .topline p { margin: 0; color: rgba(247,241,229,.62); font: 11px/1.3 var(--mono); text-align: right; }
+  .stage-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .stage-button {
+    min-height: 40px;
+    padding: 7px 10px;
+    border: 1px solid rgba(247,241,229,.28);
+    color: rgba(247,241,229,.72);
+    background: transparent;
+    cursor: pointer;
+    font: 700 11px/1.05 var(--mono);
+    letter-spacing: .04em;
+    text-align: left;
+    transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
+  }
+  .stage-button:hover, .stage-button.active { border-color: var(--paper); background: var(--paper); color: var(--ink); }
+  .stage-button:active { transform: scale(.96); }
+  .stage-button span { color: inherit; opacity: 1; font-size: inherit; }
+
+  @media (min-width: 741px) {
+    .stage-picker { flex-wrap: nowrap; gap: 3px; }
+    .stage-button { flex: 1 1 0; min-width: 0; padding-inline: 4px; font-size: clamp(7px, .62vw, 9px); letter-spacing: .02em; white-space: nowrap; }
+  }
+
+  .deck {
+    position: relative;
+    width: min(100%, calc((100vh - 128px) * 1.7777));
+    min-width: 280px;
+    aspect-ratio: 16 / 9;
+    margin: 0 auto;
+    overflow: hidden;
+    background: var(--paper);
+    box-shadow: 0 24px 70px rgba(0,0,0,.25);
+    isolation: isolate;
+  }
+  .deck::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent 49.8%, rgba(23,19,14,.05) 50%, transparent 50.2%), linear-gradient(transparent 49.8%, rgba(23,19,14,.05) 50%, transparent 50.2%);
+    background-size: 25% 25%;
+  }
+  .stage {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 38% 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 4%;
+    padding: 7% 7% 8%;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(10px);
+    transition: opacity .26s ease, visibility .26s ease, transform .26s ease;
+  }
+  .stage.active { opacity: 1; visibility: visible; transform: translateY(0); }
+  .copy { grid-column: 1; grid-row: 1; align-self: start; }
+  .kicker { margin: 0 0 14px; color: var(--signal); font: 800 clamp(9px, 1.1vw, 15px)/1 var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+  .title { max-width: 8em; margin: 0; font-size: clamp(32px, 5.1vw, 74px); font-weight: 850; line-height: .96; letter-spacing: -.065em; text-wrap: balance; }
+  .title .signal { color: var(--signal); }
+  .deck-copy { max-width: 25em; margin: 5.5% 0 0; font-size: clamp(15px, 1.85vw, 27px); font-weight: 600; line-height: 1.3; text-wrap: pretty; }
+  .stage-note { grid-column: 1; grid-row: 2; max-width: none; margin: 0; color: var(--muted); font-size: clamp(9px, 1.05vw, 15px); font-weight: 700; letter-spacing: .035em; line-height: 1.25; text-wrap: pretty; }
+
+  .title-stage { display: grid; grid-template-columns: 1fr; grid-template-rows: 1fr; place-items: center; padding: 7% 9%; }
+  .title-lockup { width: 100%; max-width: 1200px; }
+  .talk-title { margin: 0; font-size: clamp(68px, 9.6vw, 140px); font-weight: 900; line-height: .82; letter-spacing: -.075em; }
+  .talk-subtitle { margin: 4% 0 0; padding-top: 2%; border-top: clamp(3px, .34vw, 5px) solid var(--signal); color: var(--signal); font: 850 clamp(16px, 1.9vw, 28px)/1 var(--mono); letter-spacing: .055em; text-transform: uppercase; white-space: nowrap; }
+  .talk-speaker { margin: 4% 0 0; color: var(--muted); font: 800 clamp(11px, 1.25vw, 18px)/1 var(--mono); letter-spacing: .04em; }
+
+  .machine { position: relative; grid-column: 2; grid-row: 1 / -1; min-width: 0; min-height: 0; align-self: stretch; }
+  .module {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    border: clamp(2px, .34vw, 5px) solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: clamp(14px, 1.9vw, 28px);
+    font-weight: 850;
+    letter-spacing: -.035em;
+    text-align: center;
+    text-wrap: balance;
+    box-shadow: 7px 7px 0 rgba(23,19,14,.12);
+  }
+  .module.signal { border-color: var(--signal); background: var(--signal); color: var(--paper); box-shadow: 7px 7px 0 rgba(217,72,15,.18); }
+  .module.soft { border-color: var(--signal); background: var(--soft); }
+  .module small { display: block; margin-top: .46em; color: var(--muted); font: 700 clamp(9px, .95vw, 14px)/1.25 var(--mono); letter-spacing: .02em; }
+  .module.signal small { color: rgba(247,241,229,.75); }
+  .arrow { position: absolute; color: var(--signal); font: 900 clamp(24px, 3.5vw, 50px)/1 var(--sans); }
+  .stage .machine .module,
+  .stage .machine .arrow {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity .24s ease, transform .24s cubic-bezier(.2, 0, 0, 1);
+    will-change: opacity, transform;
+  }
+  .stage.active .machine .module,
+  .stage.active .machine .arrow { opacity: 1; transform: translateY(0); }
+  .stage.active .machine .module:nth-child(1), .stage.active .machine .arrow:nth-child(1) { transition-delay: 30ms; }
+  .stage.active .machine .module:nth-child(2), .stage.active .machine .arrow:nth-child(2) { transition-delay: 110ms; }
+  .stage.active .machine .module:nth-child(3), .stage.active .machine .arrow:nth-child(3) { transition-delay: 190ms; }
+  .stage.active .machine .module:nth-child(4), .stage.active .machine .arrow:nth-child(4) { transition-delay: 270ms; }
+  .stage.active .machine .module:nth-child(5), .stage.active .machine .arrow:nth-child(5) { transition-delay: 350ms; }
+  .stage.active .machine .module:nth-child(6), .stage.active .machine .arrow:nth-child(6) { transition-delay: 430ms; }
+  .one-box { display: grid; place-items: center; }
+  .one-box .all-in-one { width: 67%; height: 47%; padding: 8%; }
+  .one-box .all-in-one::after { content: "model pull  •  runtime  •  local server"; position: absolute; left: 10%; right: 10%; bottom: 12%; color: rgba(247,241,229,.74); font: 700 clamp(8px, .85vw, 12px)/1.2 var(--mono); letter-spacing: .02em; }
+
+  .model-picker { display: grid; grid-template-rows: 1.25fr .93fr auto; gap: 4%; align-content: center; padding: 5% 6%; }
+  .model-picker .selected-model { padding: 7%; font: 850 clamp(36px, 5vw, 70px)/.9 var(--mono); letter-spacing: -.09em; font-variant-numeric: tabular-nums; }
+  .model-picker .name-parts { display: grid; grid-template-columns: 1.25fr .75fr; gap: 4%; min-height: 0; }
+  .model-picker .name-parts .module { padding: 7%; font-size: clamp(17px, 2.05vw, 30px); }
+  .model-picker .name-parts small { max-width: 12em; }
+  .model-clue { margin: 0; padding-top: 3%; border-top: clamp(2px, .22vw, 3px) solid var(--signal); color: var(--muted); font: 700 clamp(9px, .94vw, 14px)/1.3 var(--mono); letter-spacing: .015em; text-wrap: pretty; }
+
+  .separate {
+    display: grid;
+    grid-template-columns: 1fr 12% 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    align-content: center;
+    column-gap: 2%;
+    row-gap: clamp(18px, 3.2vw, 38px);
+    padding-inline: 8%;
+  }
+  .separate .module { grid-row: 1; min-height: clamp(138px, 17vw, 214px); padding: 9%; }
+  .separate .arrow { position: static; grid-row: 1; transform: none; text-align: center; }
+  .model-details {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: clamp(12px, 1.8vw, 24px);
+    row-gap: 5px;
+    align-items: baseline;
+    padding-top: clamp(10px, 1.5vw, 18px);
+    border-top: clamp(2px, .22vw, 3px) solid var(--signal);
+    color: var(--ink);
+  }
+  .model-details p { grid-row: 1 / span 3; margin: 0; color: var(--signal); font: 800 clamp(9px, .95vw, 14px)/1.15 var(--mono); letter-spacing: .1em; text-align: left; text-transform: uppercase; }
+  .model-details strong { min-width: 0; font-size: clamp(12px, 1.32vw, 19px); font-weight: 850; letter-spacing: -.035em; line-height: 1.15; text-wrap: balance; }
+  .model-details span { color: var(--muted); font: 700 clamp(8px, .82vw, 12px)/1.2 var(--mono); letter-spacing: .015em; }
+
+  .local-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(108px, .62fr); grid-template-rows: 1.12fr .78fr .78fr; gap: 3.5%; align-content: center; padding: 3% 7%; }
+  .local-stack .module { min-height: 0; padding: 4%; }
+  .local-stack .runtime { grid-column: 1; grid-row: 1; }
+  .local-stack .model-module { position: static; width: auto; height: auto; grid-column: 2; grid-row: 1; border-width: 2px; box-shadow: none; font-size: clamp(10px, 1.2vw, 17px); }
+  .local-stack .model-module small { margin-top: .25em; }
+  .local-stack .os, .local-stack .hardware { grid-column: 1 / -1; }
+  .local-stack .os { grid-row: 2; }
+  .local-stack .hardware { grid-row: 3; }
+
+  .hardware-debate { display: grid; grid-template-columns: minmax(0, 1fr) clamp(42px, 5vw, 68px) minmax(0, 1fr); align-items: center; gap: 2%; padding: 4% 1%; }
+  .hardware-debate .camp { min-height: 62%; padding: 10% 7%; }
+  .hardware-debate .camp-label { margin: 0 0 clamp(18px, 2.3vw, 30px); font: 850 clamp(10px, 1.1vw, 16px)/1.1 var(--mono); letter-spacing: .11em; text-transform: uppercase; }
+  .hardware-debate .camp strong { display: block; font-size: clamp(30px, 4vw, 58px); font-weight: 900; line-height: .9; letter-spacing: -.07em; text-wrap: balance; }
+  .hardware-debate .camp-claim { max-width: 15em; margin: clamp(20px, 2.6vw, 34px) 0 0; color: var(--muted); font: 750 clamp(10px, 1.08vw, 16px)/1.3 var(--mono); letter-spacing: .01em; text-wrap: pretty; }
+  .hardware-debate .signal .camp-claim { color: rgba(247,241,229,.78); }
+  .hardware-debate .versus { color: var(--signal); font: 900 clamp(20px, 2.9vw, 42px)/1 var(--mono); letter-spacing: -.08em; text-align: center; }
+
+  .photo-only { display: block; padding: 0; }
+  .photo-only img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .photo-only.cover img { object-fit: cover; }
+
+  .agent-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, .62fr); grid-template-rows: 1.12fr .78fr .93fr .62fr .62fr; gap: 2.8%; align-content: center; padding: 2% 6%; }
+  .agent-stack .module { min-height: 0; padding: 4%; }
+  .agent-stack .agent { grid-column: 1; grid-row: 1; border-color: var(--signal); background: var(--soft); }
+  .agent-stack .tools { position: static; width: auto; height: auto; grid-column: 2; grid-row: 1; border-width: 2px; box-shadow: none; font-size: clamp(10px, 1.05vw, 15px); }
+  .agent-stack .serving-api, .agent-stack .os, .agent-stack .hardware { grid-column: 1 / -1; }
+  .agent-stack .serving-api { grid-row: 2; }
+  .agent-stack .runtime { grid-column: 1; grid-row: 3; }
+  .agent-stack .model-module { position: static; width: auto; height: auto; grid-column: 2; grid-row: 3; border-width: 2px; box-shadow: none; font-size: clamp(9px, .95vw, 14px); }
+  .agent-stack .os { grid-row: 4; }
+  .agent-stack .hardware { grid-row: 5; }
+
+  .adapter-stack { display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, .62fr); grid-template-rows: 1.12fr .78fr .72fr .93fr .62fr .62fr; gap: 2%; align-content: center; padding: 1.5% 6%; }
+  .adapter-stack .module { min-height: 0; padding: 3.5%; }
+  .adapter-stack .agent { grid-column: 1; grid-row: 1; border-color: var(--signal); background: var(--soft); }
+  .adapter-stack .tools { position: static; width: auto; height: auto; grid-column: 2; grid-row: 1; border-width: 2px; box-shadow: none; font-size: clamp(10px, 1.05vw, 15px); }
+  .adapter-stack .serving-api, .adapter-stack .tool-adapter, .adapter-stack .os, .adapter-stack .hardware { grid-column: 1 / -1; }
+  .adapter-stack .serving-api { grid-row: 2; }
+  .adapter-stack .tool-adapter { grid-row: 3; }
+  .adapter-stack .runtime { grid-column: 1; grid-row: 4; }
+  .adapter-stack .model-module { position: static; width: auto; height: auto; grid-column: 2; grid-row: 4; border-width: 2px; box-shadow: none; font-size: clamp(9px, .95vw, 14px); }
+  .adapter-stack .os { grid-row: 5; }
+  .adapter-stack .hardware { grid-row: 6; }
+
+  .shared { display: grid; grid-template-rows: .42fr .72fr .44fr .5fr .9fr .48fr; gap: 2.1%; padding: .5% 7%; align-content: center; }
+  .agents-row, .runtime-row, .hardware-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4%; }
+  .shared .agents-row .module { padding: 6%; border-width: 2px; box-shadow: none; font-size: clamp(9px, 1.05vw, 15px); }
+  .shared .gateway { width: 58%; justify-self: center; padding: 4%; }
+  .shared .gateway small { color: rgba(247,241,229,.75); }
+  .shared .serving-api { width: 68%; justify-self: center; padding: 2.5%; }
+  .shared .tool-adapter { width: 68%; justify-self: center; padding: 2.5%; border-color: var(--signal); background: var(--soft); }
+  .shared .runtime-row .module, .shared .hardware-row .module { padding: 5%; font-size: clamp(10px, 1.2vw, 17px); }
+  .shared .hardware-row { grid-template-columns: 1fr 1fr; width: 68%; justify-self: center; }
+  .shared .module { z-index: 1; }
+
+  .swap-machine {
+    display: grid;
+    grid-template-rows: auto repeat(8, minmax(0, 1fr));
+    gap: .9%;
+    align-content: center;
+    padding: .75% 2% .75% 5%;
+  }
+  .swap-legend,
+  .swap-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) 9% minmax(116px, .72fr);
+    gap: 2%;
+    min-height: 0;
+  }
+  .swap-legend { align-items: end; }
+  .swap-legend span {
+    color: var(--muted);
+    font: 850 clamp(8px, .78vw, 11px)/1 var(--mono);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .swap-legend span:last-child { grid-column: 3; color: var(--signal); }
+  .swap-row { align-items: stretch; }
+  .swap-row .module {
+    min-height: 0;
+    padding: 1.5% 4%;
+    font-size: clamp(11px, 1.32vw, 19px);
+    box-shadow: 5px 5px 0 rgba(23,19,14,.1);
+  }
+  .swap-row.swappable .stack-layer { border-color: var(--signal); }
+  .swap-row .stack-layer small { margin-top: .22em; }
+  .swap-row .swap-arrow {
+    position: static;
+    display: grid;
+    place-items: center;
+    color: var(--signal);
+    font: 900 clamp(17px, 2vw, 29px)/1 var(--sans);
+  }
+  .swap-row .cartridge {
+    border-width: 2px;
+    background: var(--soft);
+    box-shadow: none;
+    color: var(--ink);
+    font: 800 clamp(8px, .9vw, 13px)/1.15 var(--mono);
+    letter-spacing: .01em;
+  }
+  .swap-row.fixed .stack-layer { box-shadow: 5px 5px 0 rgba(217,72,15,.18); }
+  .swap-row .lock-stamp {
+    grid-column: 2 / -1;
+    display: flex;
+    align-items: center;
+    padding-left: 8%;
+    color: var(--signal);
+    font: 900 clamp(9px, 1vw, 14px)/1 var(--mono);
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  .swap-row .lock-stamp::before {
+    content: "";
+    width: clamp(18px, 2.2vw, 30px);
+    height: 3px;
+    margin-right: 10px;
+    background: var(--signal);
+  }
+  .stage .swap-machine .cartridge { transform: translateX(18px); }
+  .stage.active .swap-machine .cartridge { transform: translateX(0); }
+  .stage .swap-machine .swap-arrow { opacity: 0; transform: translateX(10px); transition: opacity .24s ease, transform .24s cubic-bezier(.2, 0, 0, 1); }
+  .stage.active .swap-machine .swap-arrow { opacity: 1; transform: translateX(0); }
+
+  .complete { display: grid; place-items: center; padding: 1% 5%; }
+  .complete-stack {
+    display: grid;
+    grid-template-rows: .48fr .72fr .68fr .56fr .86fr .52fr .52fr;
+    gap: 2%;
+    width: 88%;
+    height: 82%;
+    min-height: 0;
+  }
+  .complete-stack .module { min-height: 0; padding: 2.2% 4%; font-size: clamp(10px, 1.3vw, 19px); }
+  .complete-agents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.5%; min-height: 0; }
+  .complete-agents .module { border-width: 2px; box-shadow: none; background: var(--soft); font-size: clamp(8px, .92vw, 13px); }
+  .complete-stack .gateway, .complete-stack .serving-api { border-color: var(--signal); background: var(--signal); color: var(--paper); }
+  .complete-stack .gateway small, .complete-stack .serving-api small { color: rgba(247,241,229,.76); }
+  .complete-stack .tool-adapter { border-color: var(--signal); background: var(--soft); }
+  .complete-worker { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(110px, .55fr); gap: 2.5%; min-height: 0; }
+  .complete-worker .model-module { border-width: 2px; box-shadow: none; background: var(--soft); font-size: clamp(8px, .9vw, 13px); }
+  .complete-stack .os { padding-block: 1.5%; }
+  .complete-stack .hardware { padding-block: .65%; }
+  .complete-stack .hardware small { margin-top: .2em; }
+
+  .counter { position: absolute; right: 3%; bottom: 3%; z-index: 4; color: var(--muted); font: 800 clamp(9px, 1vw, 14px)/1 var(--mono); font-variant-numeric: tabular-nums; }
+  .progress { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; height: .7%; background: rgba(23,19,14,.15); }
+  .progress div { width: 4%; height: 100%; background: var(--signal); transition: width .22s ease; }
+  .live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+  .intro-machine, .resource { display: flex; flex-direction: column; justify-content: center; gap: clamp(10px, 1.7vw, 22px); padding: 4%; }
+  .resource { gap: clamp(12px, 2.1vw, 26px); }
+  .intro-machine a.module, .resource a.module { width: 100%; text-decoration: none; }
+  .resource a.module:hover { border-color: var(--signal); color: var(--signal); }
+  .resource a.module.signal:hover { color: var(--paper); border-color: var(--ink); }
+
+  .definitions { display: grid; grid-template-columns: 1fr 1fr; gap: 7%; align-content: center; padding: 3% 2%; }
+  .definition-column { display: grid; grid-template-rows: repeat(4, minmax(0, 1fr)); min-height: 78%; }
+  .definition {
+    display: grid;
+    align-content: center;
+    min-height: 0;
+    padding: 7% 2% 6%;
+    border-top: clamp(2px, .22vw, 3px) solid var(--line);
+  }
+  .definition:first-child { border-color: var(--signal); }
+  .definition h3 { margin: 0 0 .34em; color: var(--signal); font-size: clamp(14px, 1.45vw, 21px); font-weight: 900; letter-spacing: -.035em; }
+  .definition p { margin: 0; color: var(--ink); font: 700 clamp(10px, 1vw, 15px)/1.28 var(--mono); letter-spacing: -.01em; text-wrap: pretty; }
+
+  .architecture-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 7%; align-content: center; padding: 4% 2%; }
+  .model-kind { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 5%; min-height: 76%; padding-top: 4%; border-top: clamp(3px, .3vw, 4px) solid var(--signal); }
+  .kind-label { margin: 0; color: var(--signal); font: 900 clamp(11px, 1.15vw, 17px)/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .dense-path { min-height: 0; padding: 10%; }
+  .moe-path { display: grid; grid-template-rows: .55fr .22fr 1fr; min-height: 0; }
+  .moe-router { width: 72%; justify-self: center; min-height: 0; padding: 4%; border-width: 2px; box-shadow: none; font-size: clamp(12px, 1.35vw, 20px); }
+  .route-line { width: 3px; height: 100%; justify-self: center; background: var(--signal); }
+  .expert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5%; min-height: 0; }
+  .expert-grid .module { min-height: 0; padding: 6%; border-width: 2px; box-shadow: none; font-size: clamp(10px, 1.15vw, 17px); }
+  .kind-note { margin: 0; color: var(--muted); font: 750 clamp(9px, .95vw, 14px)/1.25 var(--mono); text-wrap: pretty; }
+
+  .endpoint-surface { display: grid; grid-template-columns: 1fr 1.18fr; gap: 4%; align-content: center; padding: 2% 3%; }
+  .endpoint-group { display: grid; grid-template-rows: auto repeat(4, minmax(0, 1fr)); gap: 2.6%; height: 82%; min-height: 0; align-self: center; }
+  .endpoint-group h3 { margin: 0; color: var(--signal); font: 800 clamp(9px, 1vw, 14px)/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  .endpoint {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: clamp(7px, .8vw, 12px);
+    align-content: center;
+    min-width: 0;
+    padding: 5% 6%;
+    border: clamp(2px, .22vw, 3px) solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    text-decoration: none;
+    box-shadow: 5px 5px 0 rgba(23,19,14,.1);
+  }
+  .endpoint:hover { border-color: var(--signal); }
+  .endpoint .method { grid-row: 1 / -1; align-self: center; color: var(--signal); font: 900 clamp(8px, .78vw, 11px)/1 var(--mono); letter-spacing: .04em; }
+  .endpoint code { min-width: 0; overflow-wrap: anywhere; font: 800 clamp(8px, .96vw, 14px)/1.15 var(--mono); letter-spacing: -.035em; }
+  .endpoint small { margin-top: .28em; color: var(--muted); font: 700 clamp(7px, .72vw, 10px)/1.1 var(--mono); }
+  .endpoint-group.multimodal .endpoint { border-color: var(--signal); background: var(--soft); }
+
+  .thank-you-stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 3.5%;
+    padding: 5.2% 7% 6.5%;
+  }
+  .thanks-head {
+    grid-column: 1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: minmax(0, .82fr) minmax(330px, 1.18fr);
+    gap: 6%;
+    align-items: end;
+  }
+  .thanks-head .kicker { margin-bottom: 10px; }
+  .thanks-head .title { max-width: none; font-size: clamp(46px, 6.4vw, 92px); }
+  .endpoint-hero {
+    display: grid;
+    gap: .38em;
+    padding: 4.5% 5%;
+    border: clamp(2px, .3vw, 4px) solid var(--signal);
+    background: var(--signal);
+    color: var(--paper);
+    text-decoration: none;
+    box-shadow: 7px 7px 0 rgba(217,72,15,.18);
+  }
+  .endpoint-hero span { font: 850 clamp(8px, .85vw, 12px)/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  .endpoint-hero strong { font: 850 clamp(16px, 1.8vw, 26px)/1.08 var(--mono); letter-spacing: -.035em; overflow-wrap: anywhere; }
+  .endpoint-hero:hover { border-color: var(--ink); }
+  .resources-finale {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .resource-list { display: grid; align-content: stretch; min-width: 0; min-height: 0; }
+  .resource-list:first-child { grid-template-rows: auto repeat(6, minmax(0, 1fr)); }
+  .resource-list:last-child { grid-template-rows: auto repeat(5, minmax(0, 1fr)); }
+  .resource-list h3 {
+    margin: 0;
+    padding: 0 0 1.1em;
+    color: var(--signal);
+    font: 900 clamp(9px, .95vw, 14px)/1 var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .resource-link {
+    display: grid;
+    grid-template-columns: minmax(0, .74fr) minmax(0, 1.26fr);
+    gap: 5%;
+    align-items: center;
+    min-width: 0;
+    padding: 1.8% 0;
+    border-top: 2px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .resource-link:hover { border-color: var(--signal); color: var(--signal); }
+  .resource-link strong { min-width: 0; font-size: clamp(12px, 1.3vw, 19px); font-weight: 900; letter-spacing: -.035em; line-height: 1.05; }
+  .resource-link span { min-width: 0; color: var(--muted); font: 700 clamp(7px, .74vw, 11px)/1.15 var(--mono); overflow-wrap: anywhere; }
+  .thank-you-stage .stage-note { grid-column: 1; grid-row: 3; }
+
+  @media (max-width: 740px) {
+    .shell { width: min(100% - 22px, 680px); padding-top: 12px; }
+    .topline { display: block; }
+    .topline p { margin-top: 8px; text-align: left; }
+    .deck { width: 100%; min-width: 0; height: min(660px, calc(100vh - 176px)); min-height: 540px; aspect-ratio: auto; }
+    .stage { grid-template-columns: 36% 1fr; padding: 6% 5% 9%; gap: 4%; }
+    .stage-picker { gap: 4px; }
+    .stage-button { min-width: 76px; }
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topline">
+      <h1>Running Local Models / The Expanding Machine</h1>
+      <p>Arrows advance · 1 to 0 jumps · Home returns</p>
+    </header>
+    <nav class="stage-picker" aria-label="Expanding machine stages">
+      <button class="stage-button active" data-stage="0" aria-label="Slide 01: Title"><span>01</span></button>
+      <button class="stage-button" data-stage="1" aria-label="Slide 02: Speaker"><span>02</span></button>
+      <button class="stage-button" data-stage="1" aria-label="Slide 02: Definitions"><span>02</span></button>
+      <button class="stage-button" data-stage="1" aria-label="Slide 02: One box"><span>02</span></button>
+      <button class="stage-button" data-stage="2" aria-label="Slide 03: Models"><span>03</span></button>
+      <button class="stage-button" data-stage="3" aria-label="Slide 04: Pull apart"><span>04</span></button>
+      <button class="stage-button" data-stage="4" aria-label="Slide 07: Dense versus MoE"><span>07</span></button>
+      <button class="stage-button" data-stage="4" aria-label="Slide 08: Choose app"><span>08</span></button>
+      <button class="stage-button" data-stage="5" aria-label="Slide 09: Choose model"><span>09</span></button>
+      <button class="stage-button" data-stage="5" aria-label="Slide 06: Local stack"><span>06</span></button>
+      <button class="stage-button" data-stage="6" aria-label="Slide 07: Hardware"><span>07</span></button>
+      <button class="stage-button" data-stage="7" aria-label="Slide 08: Mac mini"><span>08</span></button>
+      <button class="stage-button" data-stage="8" aria-label="Slide 09: Single GPU"><span>09</span></button>
+      <button class="stage-button" data-stage="9" aria-label="Slide 10: Runtimes"><span>10</span></button>
+      <button class="stage-button" data-stage="10" aria-label="Slide 11: Agent"><span>11</span></button>
+      <button class="stage-button" data-stage="11" aria-label="Slide 12: OpenAI-compatible endpoints"><span>12</span></button>
+      <button class="stage-button" data-stage="12" aria-label="Slide 13: Agents"><span>13</span></button>
+      <button class="stage-button" data-stage="13" aria-label="Slide 14: Tool adapter"><span>14</span></button>
+      <button class="stage-button" data-stage="14" aria-label="Slide 15: Shared service"><span>15</span></button>
+      <button class="stage-button" data-stage="15" aria-label="Slide 16: DGX Spark"><span>16</span></button>
+      <button class="stage-button" data-stage="16" aria-label="Slide 17: DGX Spark cluster"><span>17</span></button>
+      <button class="stage-button" data-stage="17" aria-label="Slide 18: Dynamo"><span>18</span></button>
+      <button class="stage-button" data-stage="18" aria-label="Slide 19: Swap slots"><span>19</span></button>
+      <button class="stage-button" data-stage="19" aria-label="Slide 20: Multi-GPU"><span>20</span></button>
+      <button class="stage-button" data-stage="20" aria-label="Slide 21: Complete"><span>21</span></button>
+      <button class="stage-button" data-stage="25" aria-label="Slide 26: Thank you and resources"><span>26</span></button>
+    </nav>
+    <section class="deck" id="deck" role="region" aria-roledescription="slide deck" aria-label="The expanding local inference machine">
+      <article class="stage title-stage active" aria-roledescription="slide" aria-label="Slide 1: Running Local Models from Desktop to Data Center">
+        <div class="title-lockup">
+          <h2 class="talk-title">Running<br> Local Models</h2>
+          <p class="talk-subtitle">From Desktop to Data Center</p>
+          <p class="talk-speaker">Austin Kelsay</p>
+        </div>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 1: The speaker">
+        <div class="copy"><p class="kicker">01 / Speaker</p><h2 class="title">Austin <span class="signal">Kelsay</span></h2><p class="deck-copy">Co-founder, <strong>Finite Computer</strong> — finite.computer</p></div>
+        <div class="machine intro-machine">
+          <a class="module signal" href="https://finite.computer" target="_blank" rel="noopener">finite.computer<small>co-founder</small></a>
+          <a class="module soft" href="https://hrf.org/program/ai-for-individual-rights/" target="_blank" rel="noopener">HRF's AI for Individual Rights<small>backing · Agent Camp</small></a>
+          <a class="module" href="https://plebdevs.com" target="_blank" rel="noopener">plebdevs.com<small>open-source education · AI · Bitcoin · Nostr</small></a>
+        </div>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 2: Eight terms before we build">
+        <div class="copy"><p class="kicker">02 / Definitions</p><h2 class="title">Eight terms before <span class="signal">we build.</span></h2><p class="deck-copy">Every layer in this talk builds on these ideas.</p></div>
+        <div class="machine definitions">
+          <section class="definition-column" aria-label="Model fundamentals">
+            <div class="definition"><h3>Model</h3><p>A trained system that turns input into predicted output.</p></div>
+            <div class="definition"><h3>Weights</h3><p>The learned numbers that encode a model's behavior.</p></div>
+            <div class="definition"><h3>Parameters</h3><p>The values counted in model sizes. 8B means roughly eight billion.</p></div>
+            <div class="definition"><h3>Quantization</h3><p>Lower-precision weights that use less memory.</p></div>
+          </section>
+          <section class="definition-column" aria-label="Inference fundamentals">
+            <div class="definition"><h3>Tokens</h3><p>The chunks of text a model reads and writes.</p></div>
+            <div class="definition"><h3>Inference</h3><p>Running a trained model to produce an answer.</p></div>
+            <div class="definition"><h3>Agent</h3><p>Software that loops around a model, uses tools, and takes actions.</p></div>
+            <div class="definition"><h3>Concurrency</h3><p>How many requests the system handles at the same time.</p></div>
+          </section>
+        </div>
+        <p class="stage-note">The vocabulary stays stable while the stack expands.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 2: Ollama is one box">
+        <div class="copy"><p class="kicker">02 / First contact</p><h2 class="title">The first version is <span class="signal">one box.</span></h2><p class="deck-copy">Pull a model. Run it. Talk to it. Ollama keeps the rest out of your way.</p></div>
+        <div class="machine one-box"><div class="module signal all-in-one">Ollama</div></div>
+        <p class="stage-note">One abstraction. A fast way in.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 3: Model names are your first choice">
+        <div class="copy"><p class="kicker">03 / Models</p><h2 class="title">The name is your first <span class="signal">decision.</span></h2><p class="deck-copy">Ollama hides the plumbing. It still asks you to pick a model. That last number is your first hint about its size.</p></div>
+        <div class="machine model-picker">
+          <div class="module signal selected-model">qwen3:8b</div>
+          <div class="name-parts"><div class="module soft">Qwen3<small>model family</small></div><div class="module">8B<small>parameter count</small></div></div>
+          <p class="model-clue">More parameters usually need more memory. That is a clue, not a quality score.</p>
+        </div>
+        <p class="stage-note">You do not need to understand it yet. You just need to notice it.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 4: Model sources and files separate">
+        <div class="copy"><p class="kicker">04 / Pull it apart</p><h2 class="title">Then the box <span class="signal">opens.</span></h2><p class="deck-copy">You start choosing where the model comes from, which model you want, and which file fits your machine.</p></div>
+        <div class="machine separate">
+          <div class="module soft">Model source</div><div class="arrow">→</div><div class="module signal">Model file</div>
+          <div class="model-details"><p>Where to pull</p><strong>Hugging Face · Ollama</strong><span>Open-weight examples: Qwen3 8B · Gemma 3 12B · Mistral Small 3.2 24B</span><span>File choices: BF16 · FP8 · GGUF · MLX</span></div>
+        </div>
+        <p class="stage-note">The model is now a set of choices.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 7: Dense models versus mixture-of-experts models">
+        <div class="copy"><p class="kicker">07 / Architecture</p><h2 class="title">Dense runs it all. <span class="signal">MoE picks a few.</span></h2><p class="deck-copy">Dense models run the same full network for every token. Mixture-of-Experts models route each token through a small set of expert blocks.</p></div>
+        <div class="machine architecture-compare">
+          <section class="model-kind" aria-label="Dense model">
+            <p class="kind-label">Dense</p>
+            <div class="module signal dense-path">One network<small>all parameters active</small></div>
+            <p class="kind-note">Every token takes the same full path.</p>
+          </section>
+          <section class="model-kind" aria-label="Mixture-of-Experts model">
+            <p class="kind-label">Mixture of Experts</p>
+            <div class="moe-path">
+              <div class="module soft moe-router">Router<small>picks experts per token</small></div>
+              <div class="route-line" aria-hidden="true"></div>
+              <div class="expert-grid">
+                <div class="module signal">Expert 1<small>active</small></div>
+                <div class="module soft">Expert 2<small>loaded</small></div>
+                <div class="module signal">Expert 3<small>active</small></div>
+                <div class="module soft">Expert 4<small>loaded</small></div>
+              </div>
+            </div>
+            <p class="kind-note">Only a few experts work on each token.</p>
+          </section>
+        </div>
+        <p class="stage-note">Fewer active parameters can cut compute. All of the weights still need a home.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 8: Choose an app">
+        <div class="copy"><p class="kicker">08 / Apps</p><h2 class="title">Choose <span class="signal">your app.</span></h2><p class="deck-copy">Start with the interface that fits your machine.</p></div>
+        <div class="machine resource">
+          <a class="module" href="https://omlx.ai/" target="_blank" rel="noopener">omlx.ai<small>macOS · Apple Silicon</small></a>
+          <a class="module" href="https://jan.ai/" target="_blank" rel="noopener">jan.ai<small>Linux · open source</small></a>
+        </div>
+        <p class="stage-note">The app wraps the first version of your local stack.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 9: Choose a model">
+        <div class="copy"><p class="kicker">09 / Models</p><h2 class="title">Choose <span class="signal">your model.</span></h2><p class="deck-copy">Pull open weights from a model hub. Compare quality, speed, and size before you commit.</p></div>
+        <div class="machine resource">
+          <a class="module" href="https://huggingface.co/models" target="_blank" rel="noopener">huggingface.co<small>model hub · weights + files</small></a>
+          <a class="module signal" href="https://artificialanalysis.ai/models/open-source" target="_blank" rel="noopener">artificialanalysis.ai<small>compare open models · quality + speed</small></a>
+        </div>
+        <p class="stage-note">One place to download. One place to compare.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 6: Your laptop is already a stack">
+        <div class="copy"><p class="kicker">06 / Local stack</p><h2 class="title">The model sits on a <span class="signal">real stack.</span></h2><p class="deck-copy">Under every response: a runtime, an OS, drivers, memory, and the machine beneath them.</p></div>
+        <div class="machine local-stack">
+          <div class="module signal runtime">Inference runtime<small>memory • scheduling • execution</small></div>
+          <div class="module os">OS + drivers</div>
+          <div class="module hardware">Hardware<small>CPU • GPU • memory</small></div>
+          <div class="module soft model-module">Model weights<small>loaded by the runtime</small></div>
+        </div>
+        <p class="stage-note">The stack beneath the chat.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 7: GPU bros versus unified memory bros">
+        <div class="copy"><p class="kicker">07 / Hardware</p><h2 class="title">Pick your hardware <span class="signal">camp.</span></h2><p class="deck-copy">Discrete GPUs chase throughput and scale. Unified memory makes room for bigger models in one box.</p></div>
+        <div class="machine hardware-debate">
+          <div class="module signal camp"><p class="camp-label">GPU bros</p><strong>VRAM</strong><small>bandwidth • CUDA • scale-out</small><p class="camp-claim">Fast. Modular. Memory lives on the card.</p></div>
+          <div class="versus" aria-hidden="true">VS</div>
+          <div class="module soft camp"><p class="camp-label">Unified memory bros</p><strong>ONE POOL</strong><small>CPU + GPU • shared memory</small><p class="camp-claim">More room in one box. Less plumbing.</p></div>
+        </div>
+        <p class="stage-note">Throughput or capacity? The workload picks the winner.</p>
+      </article>
+
+      <article class="stage photo-only cover" aria-roledescription="slide" aria-label="Slide 8: Mac mini">
+        <img src="assets/hardware/mac-mini.jpg" alt="A current Mac mini viewed from the front" data-source="https://www.apple.com/newsroom/2024/10/apples-new-mac-mini-is-more-mighty-more-mini-and-built-for-apple-intelligence/">
+      </article>
+
+      <article class="stage photo-only" aria-roledescription="slide" aria-label="Slide 9: NVIDIA RTX 3090">
+        <img src="assets/hardware/rtx-3090.png" alt="An NVIDIA RTX 3090 graphics card">
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 10: Resources — inference runtimes">
+        <div class="copy"><p class="kicker">10 / Runtimes</p><h2 class="title">Pick the <span class="signal">engine.</span></h2><p class="deck-copy">One runtime fits a laptop. Another starts to matter when requests arrive together.</p></div>
+        <div class="machine resource">
+          <a class="module" href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noopener">llama.cpp<small>portable · CPU + GPU</small></a>
+          <a class="module" href="https://github.com/ml-explore/mlx-lm" target="_blank" rel="noopener">MLX-LM<small>Apple Silicon</small></a>
+          <a class="module signal" href="https://docs.vllm.ai/en/latest/" target="_blank" rel="noopener">vLLM<small>GPU serving · batching</small></a>
+          <a class="module" href="https://www.sglang.io/" target="_blank" rel="noopener">SGLang<small>high-throughput · distributed</small></a>
+        </div>
+        <p class="stage-note">The runtime loads the model and turns requests into tokens.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 11: An agent needs a stable contract">
+        <div class="copy"><p class="kicker">11 / Agent</p><h2 class="title">An agent is not <span class="signal">the server.</span></h2><p class="deck-copy">It owns the loop, tools, and memory. It calls inference through a stable serving contract.</p></div>
+        <div class="machine agent-stack">
+          <div class="module agent">Client-side agent<small>loop • memory • decisions</small></div>
+          <div class="module signal serving-api">Serving API<small>OpenAI-compatible</small></div>
+          <div class="module runtime">Inference runtime</div>
+          <div class="module os">OS + drivers</div>
+          <div class="module hardware">Hardware</div>
+          <div class="module soft tools">Tools + memory<small>agent-owned</small></div>
+          <div class="module soft model-module">Model weights<small>loaded here</small></div>
+        </div>
+        <p class="stage-note">The agent consumes inference.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 13: Standardize your inference API">
+        <div class="copy"><p class="kicker">13 / OpenAI-compatible</p><h2 class="title">Standardize your <span class="signal">inference API.</span></h2><p class="deck-copy">The OpenAI-compatible API is the common contract. Keep it fixed while the models, runtimes, and hardware behind it change.</p></div>
+        <div class="machine endpoint-surface">
+          <section class="endpoint-group" aria-label="Common endpoints">
+            <h3>Common</h3>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/responses/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/responses</code><small>unified generation</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/chat/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/chat/completions</code><small>chat + tool calls</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/models/methods/list" target="_blank" rel="noopener"><span class="method">GET</span><code>/v1/models</code><small>available model IDs</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/embeddings/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/embeddings</code><small>vectors</small></a>
+          </section>
+          <section class="endpoint-group multimodal" aria-label="Multimodal endpoints">
+            <h3>Multimodal</h3>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/images" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/images/generations</code><small>text → image</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/audio/transcriptions</code><small>audio → text</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/audio/subresources/translations/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/audio/translations</code><small>audio → English</small></a>
+            <a class="endpoint" href="https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create" target="_blank" rel="noopener"><span class="method">POST</span><code>/v1/audio/speech</code><small>text → audio</small></a>
+          </section>
+        </div>
+        <p class="stage-note">One stable contract keeps every client portable.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 12: Resources for agents">
+        <div class="copy"><p class="kicker">12 / Agents</p><h2 class="title">Point an agent <span class="signal">at it.</span></h2><p class="deck-copy">Change the base URL. Keep the agent.</p></div>
+        <div class="machine resource">
+          <a class="module signal" href="https://hermes-agent.nousresearch.com/docs/" target="_blank" rel="noopener">Hermes Agent<small>personal agent · tools + memory</small></a>
+          <a class="module" href="https://opencode.ai/docs/providers" target="_blank" rel="noopener">OpenCode<small>coding agent · custom base URL</small></a>
+          <a class="module" href="https://pi.dev/" target="_blank" rel="noopener">Pi<small>minimal coding agent · terminal</small></a>
+          <a class="module" href="https://block.github.io/goose/" target="_blank" rel="noopener">goose<small>general-purpose · desktop + CLI</small></a>
+        </div>
+        <p class="stage-note">The agent is the client. Your inference stack is the provider.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 14: Tool calls need a translator">
+        <div class="copy"><p class="kicker">14 / Tool adapter</p><h2 class="title">Tool calls need a <span class="signal">translator.</span></h2><p class="deck-copy">The agent sends one contract. The adapter turns it into the format each model expects, then parses the call on the way back.</p></div>
+        <div class="machine adapter-stack">
+          <div class="module agent">Client-side agent<small>loop • memory • decisions</small></div>
+          <div class="module signal serving-api">Serving API<small>OpenAI-compatible</small></div>
+          <div class="module soft tool-adapter">Tool adapter<small>template · grammar · parse</small></div>
+          <div class="module runtime">Inference runtime</div>
+          <div class="module os">OS + drivers</div>
+          <div class="module hardware">Hardware</div>
+          <div class="module soft tools">Tools + memory<small>agent-owned</small></div>
+          <div class="module soft model-module">Model weights<small>loaded here</small></div>
+        </div>
+        <p class="stage-note">The adapter translates. The agent executes.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 15: Shared inference needs traffic control">
+        <div class="copy"><p class="kicker">15 / Shared service</p><h2 class="title">Concurrency turns it into <span class="signal">a service.</span></h2><p class="deck-copy">At one request, the stack feels simple. At sixteen, traffic needs a gate and runtimes need to share the work.</p></div>
+        <div class="machine shared">
+          <div class="agents-row"><div class="module soft">Agent 01</div><div class="module soft">Agent 02</div><div class="module soft">Agent 16</div></div>
+          <div class="module signal gateway">Gateway<small>queue • route • policy</small></div>
+          <div class="module serving-api">OpenAI-compatible API<small>one contract • many clients</small></div>
+          <div class="module tool-adapter">Tool adapter<small>template • grammar • parse</small></div>
+          <div class="runtime-row"><div class="module">Runtime A<small>batch • execute</small></div><div class="module">Runtime B<small>batch • execute</small></div><div class="module">Runtime C<small>batch • execute</small></div></div>
+          <div class="hardware-row"><div class="module">GPU node</div><div class="module">GPU node</div></div>
+        </div>
+        <p class="stage-note">The gateway controls traffic. The API fixes the contract. The adapter translates tools. The runtime runs the model.</p>
+      </article>
+
+      <article class="stage photo-only" aria-roledescription="slide" aria-label="Slide 16: NVIDIA DGX Spark">
+        <img src="assets/hardware/unified-memory-box.png" alt="An NVIDIA DGX Spark">
+      </article>
+
+      <article class="stage photo-only cover" aria-roledescription="slide" aria-label="Slide 17: Austin's DGX Spark cluster">
+        <img src="assets/hardware/cluster-window.png" alt="Austin's DGX Spark cluster running by a window">
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 18: Resources for NVIDIA Dynamo">
+        <div class="copy"><p class="kicker">18 / Dynamo</p><h2 class="title">Route with <span class="signal">Dynamo.</span></h2><p class="deck-copy">One endpoint in. The right worker gets the request.</p></div>
+        <div class="machine resource">
+          <a class="module signal" href="https://developer.nvidia.com/dynamo" target="_blank" rel="noopener">NVIDIA Dynamo<small>distributed inference layer</small></a>
+        </div>
+        <p class="stage-note">This is the gateway running on our cluster.</p>
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 19: The interface stays while the stack changes">
+        <div class="copy"><p class="kicker">19 / Stable core</p><h2 class="title">Lock two layers. <span class="signal">Swap the rest.</span></h2><p class="deck-copy">The API and Dynamo stay put. Every other layer becomes a slot.</p></div>
+        <div class="machine swap-machine">
+          <div class="swap-legend"><span>The stack</span><span>Swap in</span></div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">Agent / client</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">Hermes · OpenCode · goose</div>
+          </div>
+          <div class="swap-row fixed">
+            <div class="module signal stack-layer">OpenAI-compatible API<small>stable contract</small></div><div class="lock-stamp">Locked</div>
+          </div>
+          <div class="swap-row fixed">
+            <div class="module signal stack-layer">NVIDIA Dynamo<small>stable routing layer</small></div><div class="lock-stamp">Locked</div>
+          </div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">Tool adapter</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">template · grammar · parser</div>
+          </div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">Inference runtime</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">vLLM · SGLang · TensorRT-LLM</div>
+          </div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">Model</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">Qwen · DeepSeek · Gemma</div>
+          </div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">OS + drivers</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">Linux · macOS</div>
+          </div>
+          <div class="swap-row swappable">
+            <div class="module stack-layer">Hardware</div><div class="swap-arrow" aria-hidden="true">⇄</div><div class="module cartridge">GPU · unified memory · cluster</div>
+          </div>
+        </div>
+        <p class="stage-note">Two fixed layers. Six replaceable slots.</p>
+      </article>
+
+      <article class="stage photo-only" aria-roledescription="slide" aria-label="Slide 20: NVIDIA multi-GPU server">
+        <img src="assets/hardware/multi-gpu-server.png" alt="An NVIDIA multi-GPU server">
+      </article>
+
+      <article class="stage" aria-roledescription="slide" aria-label="Slide 21: The complete mental model">
+        <div class="copy"><p class="kicker">21 / Complete machine</p><h2 class="title">The box became <span class="signal">infrastructure.</span></h2><p class="deck-copy">One endpoint gives local agents capacity you control, without exposing which model or machine answered.</p></div>
+        <div class="machine complete">
+          <div class="complete-stack">
+            <div class="complete-agents"><div class="module">Agent 01</div><div class="module">Agent 02</div><div class="module">Agent 16</div></div>
+            <div class="module gateway">NVIDIA Dynamo<small>queue · route · policy</small></div>
+            <div class="module serving-api">OpenAI-compatible API<small>one contract · many clients</small></div>
+            <div class="module tool-adapter">Tool adapter<small>template · grammar · parse</small></div>
+            <div class="complete-worker"><div class="module runtime">Inference runtime<small>batch · schedule · execute</small></div><div class="module model-module">Model<small>Qwen · DeepSeek · Gemma</small></div></div>
+            <div class="module os">OS + drivers</div>
+            <div class="module hardware">Hardware cluster<small>GPU · unified memory · nodes</small></div>
+          </div>
+        </div>
+        <p class="stage-note">Start with one box. Add layers when the work asks for them.</p>
+      </article>
+
+      <article class="stage thank-you-stage" aria-roledescription="slide" aria-label="Slide 26: Thank you and resources">
+        <div class="thanks-head">
+          <div>
+            <p class="kicker">26 / Resources</p>
+            <h2 class="title">Thank <span class="signal">you.</span></h2>
+          </div>
+          <a class="endpoint-hero" href="https://inference.finite.computer/v1" target="_blank" rel="noopener">
+            <span>OpenAI-compatible inference</span>
+            <strong>inference.finite.computer/v1</strong>
+          </a>
+        </div>
+        <div class="resources-finale">
+          <section class="resource-list" aria-label="Start local resources">
+            <h3>Start local</h3>
+            <a class="resource-link" href="https://ollama.com/" target="_blank" rel="noopener"><strong>Ollama</strong><span>ollama.com</span></a>
+            <a class="resource-link" href="https://www.jan.ai/" target="_blank" rel="noopener"><strong>Jan</strong><span>jan.ai</span></a>
+            <a class="resource-link" href="https://omlx.ai/" target="_blank" rel="noopener"><strong>oMLX</strong><span>omlx.ai</span></a>
+            <a class="resource-link" href="https://huggingface.co/models" target="_blank" rel="noopener"><strong>Hugging Face</strong><span>huggingface.co/models</span></a>
+            <a class="resource-link" href="https://artificialanalysis.ai/models/open-source" target="_blank" rel="noopener"><strong>Artificial Analysis</strong><span>artificialanalysis.ai</span></a>
+            <a class="resource-link" href="https://github.com/AlexsJones/llmfit" target="_blank" rel="noopener"><strong>llmfit</strong><span>github.com/AlexsJones/llmfit</span></a>
+          </section>
+          <section class="resource-list" aria-label="Build the stack resources">
+            <h3>Build the stack</h3>
+            <a class="resource-link" href="https://github.com/jundot/omlx" target="_blank" rel="noopener"><strong>oMLX source</strong><span>github.com/jundot/omlx</span></a>
+            <a class="resource-link" href="https://www.nvidia.com/en-us/ai/dynamo/" target="_blank" rel="noopener"><strong>NVIDIA Dynamo</strong><span>nvidia.com/ai/dynamo</span></a>
+            <a class="resource-link" href="https://www.plebdevs.com/courses/e5aeb540-d9b3-428b-9e1b-107db7619250" target="_blank" rel="noopener"><strong>PlebDevs course</strong><span>plebdevs.com/courses</span></a>
+            <a class="resource-link" href="https://hrf.org/program/ai-for-individual-rights/" target="_blank" rel="noopener"><strong>AI for Individual Rights</strong><span>hrf.org</span></a>
+            <a class="resource-link" href="https://finite.computer/" target="_blank" rel="noopener"><strong>Finite Computer</strong><span>finite.computer</span></a>
+          </section>
+        </div>
+        <p class="stage-note">Running Local Models: From Desktop to Data Center</p>
+      </article>
+      <div class="counter" id="counter" aria-hidden="true">01 / 26</div>
+      <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
+      <p class="live" id="liveRegion" role="status" aria-live="polite">Slide 1 of 26</p>
+    </section>
+  </main>
+<script>
+(function () {
+  "use strict";
+  var deck = document.getElementById("deck");
+  var stages = Array.prototype.slice.call(document.querySelectorAll(".stage"));
+  var buttons = Array.prototype.slice.call(document.querySelectorAll(".stage-button"));
+  var counter = document.getElementById("counter");
+  var progress = document.getElementById("progressBar");
+  var live = document.getElementById("liveRegion");
+  var current = 0;
+  function syncSlideNumbers() {
+    buttons.forEach(function (button, i) {
+      var number = String(i + 1).padStart(2, "0");
+      var label = button.getAttribute("aria-label").replace(/^Slide\s+\d+:\s*/, "");
+      button.dataset.stage = String(i);
+      button.querySelector("span").textContent = number;
+      button.setAttribute("aria-label", "Slide " + number + ": " + label);
+    });
+    stages.forEach(function (stage, i) {
+      var number = String(i + 1).padStart(2, "0");
+      var label = stage.getAttribute("aria-label").replace(/^Slide\s+\d+:\s*/, "");
+      var kicker = stage.querySelector(".kicker");
+      stage.setAttribute("aria-label", "Slide " + number + ": " + label);
+      if (kicker) kicker.textContent = kicker.textContent.replace(/^\d+\s*\//, number + " /");
+    });
+  }
+  function show(index) {
+    current = Math.max(0, Math.min(stages.length - 1, index));
+    stages.forEach(function (stage, i) { stage.classList.toggle("active", i === current); stage.setAttribute("aria-hidden", i === current ? "false" : "true"); });
+    buttons.forEach(function (button, i) { button.classList.toggle("active", i === current); });
+    counter.textContent = String(current + 1).padStart(2, "0") + " / " + String(stages.length).padStart(2, "0");
+    progress.style.width = ((current + 1) / stages.length * 100) + "%";
+    var heading = stages[current].querySelector(".title, .talk-title");
+    live.textContent = "Slide " + (current + 1) + " of " + stages.length + ": " + (heading ? heading.textContent.trim().replace(/\s+/g, " ") : "");
+  }
+  syncSlideNumbers();
+  buttons.forEach(function (button) { button.addEventListener("click", function () { show(Number(button.dataset.stage)); }); });
+  document.addEventListener("keydown", function (event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key >= "1" && event.key <= "9") { show(Number(event.key) - 1); return; }
+    if (event.key === "0") { show(9); return; }
+    if (["ArrowRight", "ArrowDown", "PageDown", " "].indexOf(event.key) >= 0) { event.preventDefault(); show(current + 1); }
+    if (["ArrowLeft", "ArrowUp", "PageUp"].indexOf(event.key) >= 0) { event.preventDefault(); show(current - 1); }
+    if (event.key === "Home") { event.preventDefault(); show(0); }
+    if (event.key === "End") { event.preventDefault(); show(stages.length - 1); }
+  });
+  deck.addEventListener("click", function (event) { if (event.target.closest("a")) return; show(current + 1); });
+  show(0);
+})();
+</script>
+</body>
+</html>
