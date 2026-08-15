@@ -39,7 +39,7 @@ intermediate resource slides that point the audience at the tools for each level
 
 ## Open the deck
 
-Live deck: https://austinkelsay.github.io/running-local-models/
+Live deck: https://finitecomputer.github.io/running-local-models/
 
 Open `machine.html` directly in a modern browser, or serve this directory
 locally:
