@@ -35,7 +35,7 @@ intermediate resource slides that point the audience at the tools for each level
 - Slide 23 — Swap slots (static API + Dynamo, swappable agent · tool adapter · runtime · model · OS/drivers · hardware)
 - Slide 24 — Multi-GPU server
 - Slide 25 — Complete machine
-- Slide 26 — Thank you + talk resources (including inference.finite.computer/v1)
+- Slide 26 — Thank you + talk resources
 
 ## Open the deck
 
@@ -61,6 +61,12 @@ Then visit `http://127.0.0.1:4173/machine.html`.
 
 The deck uses inline CSS and JavaScript, system fonts, and local hardware images
 under `assets/hardware/`. It has no external runtime dependencies.
+
+## Talk notes
+
+The expanded narrative, purpose, and optional slide material are preserved in
+`notes/talk-expansion.md`. These notes are tracked in Git but excluded from the
+public Vercel deployment.
 
 ## Image sources
 
